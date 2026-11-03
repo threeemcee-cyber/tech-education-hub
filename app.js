@@ -263,7 +263,7 @@
     last = { ctx: P.ctx.kind === 'course' ? { kind: 'course', id: P.ctx.id, title: P.ctx.title } : { kind: P.ctx.kind, id: P.ctx.id, title: P.ctx.title, items: P.list.slice(0, 60) }, vid: x[0] }; saveLast();
     pw.hidden = false;
     page.innerHTML = '<div class="pinfo"><div class="n">' + esc(x[1]) + '</div><div class="c">' + esc(P.ctx.title || '') + ' &middot; video ' + (P.idx + 1) + ' of ' + P.list.length + '</div></div>' +
-      '<div class="ctl"><button id="pv">&#9664;&#9664; Prev</button><button id="rw">&#8634; 10s</button><button id="ff">10s &#8635;</button><button id="nx">Next &#9654;&#9654;</button><button id="dn"' + (isDone(x[0]) ? ' class="on"' : '') + '>' + (isDone(x[0]) ? '&#10003; Watched' : 'Mark watched') + '</button></div>' +
+      '<div class="ctl"><button id="pv">&#9664;&#9664; Prev</button><button id="rw">&#8634; 10s</button><button id="ff">10s &#8635;</button><button id="nx">Next &#9654;&#9654;</button><button id="sp"' + (speedPref() !== 1 ? ' class="on"' : '') + '>' + speedPref() + 'x</button><button id="dn"' + (isDone(x[0]) ? ' class="on"' : '') + '>' + (isDone(x[0]) ? '&#10003; Watched' : 'Mark watched') + '</button></div>' +
       (start ? '<p class="status">Carrying on from ' + fmt(start) + '</p>' : '') + '<div id="perr"></div><h3>In this list</h3><div id="pl"></div>';
     P.start = start;
     renderPlayList();
@@ -279,6 +279,11 @@
     var $ = function (id) { return document.getElementById(id); };
     $('pv').onclick = function () { if (P.idx > 0) { recordNow(); P.idx--; cur.idx = P.idx; startVideo(); } };
     $('nx').onclick = function () { nextVideo(); };
+    $('sp').onclick = function () {
+      var i = (SPEEDS.indexOf(speedPref()) + 1) % SPEEDS.length, r = SPEEDS[i];
+      if (me) save('cl_rate_' + me.id, r); applySpeed(); this.textContent = r + 'x'; this.classList.toggle('on', r !== 1);
+      toast('Speed ' + (r === 1 ? 'normal (1x)' : r + 'x'));
+    };
     $('rw').onclick = function () { try { YTP.seekTo(Math.max(0, YTP.getCurrentTime() - 10), true); } catch (e) {} };
     $('ff').onclick = function () { try { YTP.seekTo(YTP.getCurrentTime() + 10, true); } catch (e) {} };
     $('dn').onclick = function () { var d = 0; try { d = YTP.getDuration(); } catch (e) {} setProg(P.vid, d || 1, d || 1, true); toast('Marked as watched'); this.classList.add('on'); this.innerHTML = '&#10003; Watched'; renderPlayList(); };
@@ -297,11 +302,14 @@
     var el = document.getElementById('perr'); if (!el || !P) return;
     el.innerHTML = '<div class="box"><p>This video will not play inside the app. Open it on YouTube instead (Brave still blocks the ads), then come back and tap Mark watched.</p><div class="btnrow"><a class="pill" target="_blank" rel="noopener" href="https://www.youtube.com/watch?v=' + encodeURIComponent(P.vid) + (P.start ? '&t=' + P.start + 's' : '') + '">Open on YouTube</a></div></div>';
   }
+  var SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
+  function speedPref() { var r = me ? load('cl_rate_' + me.id, 1) : 1; return SPEEDS.indexOf(r) >= 0 ? r : 1; }
+  function applySpeed() { try { if (YTP && YTP.setPlaybackRate) YTP.setPlaybackRate(speedPref()); } catch (e) {} }
   function onState(e) {
     if (!P) return;
     if (e.data === 0) { var d = YTP.getDuration(); setProg(P.vid, d, d, true); syncSoon(1000); nextVideo(); }
     else if (e.data === 2) { recordNow(); saveProg(); }
-    else if (e.data === 1) { var el = document.getElementById('perr'); if (el) el.innerHTML = ''; }
+    else if (e.data === 1) { var el = document.getElementById('perr'); if (el) el.innerHTML = ''; try { if (YTP.getPlaybackRate() !== speedPref()) applySpeed(); } catch (x) {} }
   }
 
   /* ---------- start ---------- */

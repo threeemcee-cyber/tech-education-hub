@@ -37,11 +37,11 @@
   function careerById(id) { for (var i = 0; i < D.careers.length; i++) if (D.careers[i].id === id) return D.careers[i]; return null; }
 
   /* ---------- household sync (same store and format as the TV and PC app) ---------- */
-  var SYNC_API = 'https://jsonblob.com/api/jsonBlob';
+  var SYNC_API = 'https://script.google.com/macros/s/AKfycbzV_ArfXvjyRDy1JGkgSnOVP3qfwQ9KwKxpKU_PuiWSE9MnJaXlkSiaPb2k-AXhEyK5/exec';
   var syncId = load('cl_sync', null), syncBusy = false, syncPending = false, syncT = 0, syncState = syncId ? 'wait' : 'off';
   function req(method, url, body) {
-    var o = { method: method, headers: { Accept: 'application/json' }, cache: 'no-store' };
-    if (body) { o.headers['Content-Type'] = 'application/json'; o.body = JSON.stringify(body); if (body && method === 'PUT') o.keepalive = o.body.length < 60000; }
+    var o = { method: method, cache: 'no-store', redirect: 'follow' };
+    if (body) { o.headers = { 'Content-Type': 'text/plain;charset=utf-8' }; o.body = JSON.stringify(body); }
     return fetch(url, o).then(function (r) { return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (e) {} return { st: r.status, j: j, r: r }; }); }, function () { return { st: 0, j: null }; });
   }
   function myProg(id) { return me && me.id === id ? prog : load('cl_prog_' + id, {}); }
@@ -87,23 +87,24 @@
     if (!syncId) { if (cb) cb(false); return; }
     if (syncBusy) { syncPending = true; if (cb) cb(false); return; }
     syncBusy = true; clearTimeout(syncT);
-    req('GET', SYNC_API + '/' + syncId).then(function (a) {
-      if (a.st !== 200 || !a.j) { syncBusy = false; syncState = a.st === 404 ? 'missing' : 'offline'; if (cb) cb(false); return; }
-      var changed = applyRemote(a.j);
-      return req('PUT', SYNC_API + '/' + syncId, localSnap()).then(function (b) {
-        syncBusy = false; syncState = b.st === 200 ? 'ok' : 'offline';
-        if (b.st === 200) save('cl_sync_at', Date.now());
+    req('GET', SYNC_API + '?k=' + syncId).then(function (a) {
+      if (a.st !== 200 || !a.j || !a.j.ok) { syncBusy = false; syncState = 'offline'; if (cb) cb(false); return; }
+      var changed = a.j.data ? applyRemote(a.j.data) : false;
+      return req('POST', SYNC_API, { k: syncId, data: localSnap() }).then(function (b) {
+        var good = b.st === 200 && b.j && b.j.ok;
+        syncBusy = false; syncState = good ? 'ok' : 'offline';
+        if (good) save('cl_sync_at', Date.now());
         if (changed) refresh();
-        if (cb) cb(b.st === 200);
+        if (cb) cb(good);
         if (syncPending) { syncPending = false; syncSoon(3000); }
       });
     });
   }
   function syncLink(code, cb) {
-    code = String(code || '').trim();
-    if (!/^[A-Za-z0-9-]{8,64}$/.test(code)) { cb(false); return; }
-    req('GET', SYNC_API + '/' + code).then(function (a) {
-      if (a.st === 200 && a.j && a.j.v === 1) { syncId = code; save('cl_sync', code); applyRemote(a.j); syncState = 'wait'; syncNow(); cb(true); } else cb(false);
+    code = String(code || '').trim().toLowerCase();
+    if (!/^[a-z0-9]{16,40}$/.test(code)) { cb(false); return; }
+    req('GET', SYNC_API + '?k=' + code).then(function (a) {
+      if (a.st === 200 && a.j && a.j.ok && a.j.data && a.j.data.v === 1) { syncId = code; save('cl_sync', code); applyRemote(a.j.data); syncState = 'wait'; syncNow(); cb(true); } else cb(false);
     });
   }
   function ago(t) { if (!t) return 'not yet'; var s = Math.round((Date.now() - t) / 1000); return s < 60 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago' : s < 86400 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' days ago'; }
@@ -307,7 +308,7 @@
   document.addEventListener('visibilitychange', function () { if (document.hidden) { recordNow(); saveProg(); syncNow(); } else syncNow(); });
   setInterval(function () { if (!document.hidden && syncId && !syncBusy) syncNow(); }, 60000);
   window.__teh = { syncNow: syncNow, info: function () { return { id: syncId, state: syncState, users: users.map(function (u) { return u.name; }), me: me && me.name, prog: Object.keys(prog).length }; } };
-  var m = /[#&]s=([A-Za-z0-9-]{8,64})/.exec(location.hash);
+  var m = /[#&]s=([a-z0-9]{16,40})/.exec(location.hash);
   try { history.replaceState(null, '', location.pathname); } catch (e) {}
   cur = { v: 'who' }; render(true);
   var lastMe = load('cl_me', null);
